@@ -15,10 +15,18 @@ object PdfGenerator {
             .replace(")", "\\)")
     }
 
-    fun writePurePdf(file: File, widthPt: Double, heightPt: Double, streamCommands: List<String>) {
+    fun writePurePdf(
+        file: File,
+        widthPt: Double,
+        heightPt: Double,
+        streamCommands: List<String>,
+        rotate90: Boolean = true
+    ) {
         val streamContent = streamCommands.joinToString("\n")
         val streamBytes = streamContent.toByteArray(StandardCharsets.UTF_8)
         val streamLen = streamBytes.size
+
+        val rotateAttr = if (rotate90) " /Rotate 90" else ""
 
         val objects = listOf(
             // Obj 1: Catalog
@@ -28,9 +36,10 @@ object PdfGenerator {
             // Obj 3: Page object
             String.format(
                 Locale.US,
-                "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f] /Resources << /Font << /F1 4 0 R /F2 5 0 R /F3 6 0 R >> >> /Contents 7 0 R >>\nendobj",
+                "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f]%s /Resources << /Font << /F1 4 0 R /F2 5 0 R /F3 6 0 R >> >> /Contents 7 0 R >>\nendobj",
                 widthPt,
-                heightPt
+                heightPt,
+                rotateAttr
             ),
             // Obj 4: Helvetica-Bold
             "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj",
@@ -85,7 +94,8 @@ object PdfGenerator {
         envelopeConfig: EnvelopeConfig,
         recipient: Address? = null,
         returnAddr: Address = EnvelopeConstants.DEFAULT_RETURN_ADDRESS,
-        outputFile: File = File(envelopeConfig.filename)
+        outputFile: File = File(envelopeConfig.filename),
+        rotate90: Boolean = true
     ): File {
         val widthPt = envelopeConfig.widthPt
         val heightPt = envelopeConfig.heightPt
@@ -166,7 +176,7 @@ object PdfGenerator {
             }
         }
 
-        writePurePdf(outputFile, widthPt, heightPt, commands)
+        writePurePdf(outputFile, widthPt, heightPt, commands, rotate90)
         return outputFile
     }
 }

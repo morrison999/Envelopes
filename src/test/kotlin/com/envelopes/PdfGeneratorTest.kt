@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PdfGeneratorTest {
@@ -29,7 +30,7 @@ class PdfGeneratorTest {
     }
 
     @Test
-    fun testGeneratePdfStandardEnvelope() {
+    fun testGeneratePdfStandardEnvelopeWithRotation() {
         val tempFile = File.createTempFile("test_env10", ".pdf")
         tempFile.deleteOnExit()
 
@@ -47,7 +48,8 @@ class PdfGeneratorTest {
             envelopeConfig = env10,
             recipient = recipient,
             returnAddr = EnvelopeConstants.DEFAULT_RETURN_ADDRESS,
-            outputFile = tempFile
+            outputFile = tempFile,
+            rotate90 = true
         )
 
         assertTrue(generated.exists())
@@ -55,11 +57,31 @@ class PdfGeneratorTest {
 
         val content = generated.readBytes().toString(StandardCharsets.ISO_8859_1)
         assertTrue(content.startsWith("%PDF-1.4"))
+        assertTrue(content.contains("/Rotate 90"))
         assertTrue(content.contains("Jane Doe"))
         assertTrue(content.contains("123 Main St"))
         assertTrue(content.contains("Austin, TX 78701"))
         assertTrue(content.contains("David Morrison"))
         assertTrue(content.contains("%%EOF"))
+    }
+
+    @Test
+    fun testGeneratePdfWithoutRotation() {
+        val tempFile = File.createTempFile("test_env_norotate", ".pdf")
+        tempFile.deleteOnExit()
+
+        val env10 = EnvelopeConstants.ENVELOPES.getValue("1")
+        val generated = PdfGenerator.generateEnvelopePdf(
+            envelopeConfig = env10,
+            recipient = Address(name = "Jane Doe"),
+            returnAddr = EnvelopeConstants.DEFAULT_RETURN_ADDRESS,
+            outputFile = tempFile,
+            rotate90 = false
+        )
+
+        assertTrue(generated.exists())
+        val content = generated.readBytes().toString(StandardCharsets.ISO_8859_1)
+        assertFalse(content.contains("/Rotate 90"))
     }
 
     @Test

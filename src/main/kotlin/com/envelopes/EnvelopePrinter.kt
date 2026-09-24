@@ -14,7 +14,8 @@ object EnvelopePrinter {
     fun printEnvelope(
         envelopeConfig: EnvelopeConfig,
         recipient: Address? = null,
-        returnAddr: Address = EnvelopeConstants.DEFAULT_RETURN_ADDRESS
+        returnAddr: Address = EnvelopeConstants.DEFAULT_RETURN_ADDRESS,
+        rotate90: Boolean = true
     ): Boolean {
         val job = PrinterJob.getPrinterJob()
         job.setJobName("Envelope - ${envelopeConfig.name}")
@@ -24,10 +25,20 @@ object EnvelopePrinter {
         val width = envelopeConfig.widthPt
         val height = envelopeConfig.heightPt
 
-        paper.setSize(width, height)
-        paper.setImageableArea(0.0, 0.0, width, height)
-        pageFormat.paper = paper
-        pageFormat.orientation = PageFormat.PORTRAIT
+        if (rotate90) {
+            // Paper orientation in printer feed tray is portrait (short edge first)
+            val feedWidth = height
+            val feedHeight = width
+            paper.setSize(feedWidth, feedHeight)
+            paper.setImageableArea(0.0, 0.0, feedWidth, feedHeight)
+            pageFormat.paper = paper
+            pageFormat.orientation = PageFormat.PORTRAIT
+        } else {
+            paper.setSize(width, height)
+            paper.setImageableArea(0.0, 0.0, width, height)
+            pageFormat.paper = paper
+            pageFormat.orientation = PageFormat.LANDSCAPE
+        }
 
         job.setPrintable(Printable { graphics, _, pageIndex ->
             if (pageIndex > 0) return@Printable Printable.NO_SUCH_PAGE
@@ -36,6 +47,12 @@ object EnvelopePrinter {
             g2d.color = Color.BLACK
             g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
             g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+
+            if (rotate90) {
+                // Rotate 90 degrees clockwise for printer feed slot
+                g2d.translate(height, 0.0)
+                g2d.rotate(Math.PI / 2.0)
+            }
 
             val heightPt = envelopeConfig.heightPt
 

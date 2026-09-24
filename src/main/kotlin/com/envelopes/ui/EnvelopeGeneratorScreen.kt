@@ -44,6 +44,7 @@ fun EnvelopeGeneratorScreen(
         ?: returnAddresses.firstOrNull()
         ?: EnvelopeConstants.DEFAULT_RETURN_ADDRESS
 
+    var rotateChecked by remember { mutableStateOf(true) }
     var saveToAddressBookChecked by remember { mutableStateOf(true) }
     var promptSaveDialogAction by remember { mutableStateOf<Pair<Address, PendingAction>?>(null) }
     var generatedFileSuccess by remember { mutableStateOf<File?>(null) }
@@ -66,7 +67,8 @@ fun EnvelopeGeneratorScreen(
             val printed = EnvelopePrinter.printEnvelope(
                 envelopeConfig = selectedEnvelope,
                 recipient = recipientToUse,
-                returnAddr = returnAddress
+                returnAddr = returnAddress,
+                rotate90 = rotateChecked
             )
             if (printed) {
                 printSuccessNotice = true
@@ -99,7 +101,8 @@ fun EnvelopeGeneratorScreen(
                     envelopeConfig = selectedEnvelope,
                     recipient = recipientToUse,
                     returnAddr = returnAddress,
-                    outputFile = targetFile
+                    outputFile = targetFile,
+                    rotate90 = rotateChecked
                 )
                 generatedFileSuccess = result
             }
@@ -484,6 +487,29 @@ fun EnvelopeGeneratorScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
 
+                    // Rotate Checkbox (Checked by default)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = rotateChecked,
+                            onCheckedChange = { rotateChecked = it }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = "Rotate",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Rotates envelope 90° for standard printer tray feeding",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     // 1. Direct System Print Button
                     Button(
                         onClick = { handleAction(PendingAction.PRINT_DIRECT) },
@@ -494,7 +520,7 @@ fun EnvelopeGeneratorScreen(
                     ) {
                         Icon(Icons.Default.Print, contentDescription = "Print to Printer")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Send to Printer...", style = MaterialTheme.typography.titleMedium)
+                        Text("Print Directly to Printer...", style = MaterialTheme.typography.titleMedium)
                     }
 
                     // 2. Generate PDF Button
@@ -507,7 +533,7 @@ fun EnvelopeGeneratorScreen(
                     ) {
                         Icon(Icons.Default.PictureAsPdf, contentDescription = "Generate PDF")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Save as PDF...", style = MaterialTheme.typography.titleMedium)
+                        Text("Generate / Save PDF...", style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
