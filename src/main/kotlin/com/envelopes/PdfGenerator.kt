@@ -2,10 +2,22 @@ package com.envelopes
 
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 object PdfGenerator {
+
+    // Matches the fonts' /WinAnsiEncoding so accented characters (é, ñ, ü...) render correctly.
+    // Characters outside windows-1252 are written as '?'.
+    private val PDF_TEXT_CHARSET: Charset = Charset.forName("windows-1252")
+
+    /** The user's Documents folder, falling back to their home folder, so saves never target the install dir. */
+    fun defaultOutputDir(): File {
+        val home = File(System.getProperty("user.home") ?: ".")
+        val documents = File(home, "Documents")
+        return if (documents.isDirectory) documents else home
+    }
 
     fun pdfEscape(text: String?): String {
         if (text == null) return ""
@@ -23,7 +35,7 @@ object PdfGenerator {
         rotate90: Boolean = true
     ) {
         val streamContent = streamCommands.joinToString("\n")
-        val streamBytes = streamContent.toByteArray(StandardCharsets.UTF_8)
+        val streamBytes = streamContent.toByteArray(PDF_TEXT_CHARSET)
         val streamLen = streamBytes.size
 
         val rotateAttr = if (rotate90) " /Rotate 90" else ""
@@ -42,11 +54,11 @@ object PdfGenerator {
                 rotateAttr
             ),
             // Obj 4: Helvetica-Bold
-            "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj",
+            "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj",
             // Obj 5: Helvetica
-            "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj",
+            "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj",
             // Obj 6: Helvetica-Oblique
-            "6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>\nendobj",
+            "6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>\nendobj",
             // Obj 7: Contents Stream
             "7 0 obj\n<< /Length $streamLen >>\nstream\n$streamContent\nendstream\nendobj"
         )
@@ -61,7 +73,7 @@ object PdfGenerator {
         for (obj in objects) {
             bodyOffsets.add(currentOffset)
             val objStr = obj + "\n"
-            val objBytes = objStr.toByteArray(StandardCharsets.UTF_8)
+            val objBytes = objStr.toByteArray(PDF_TEXT_CHARSET)
             bodyByteList.add(objBytes)
             currentOffset += objBytes.size
         }

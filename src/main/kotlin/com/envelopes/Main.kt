@@ -20,7 +20,10 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import java.util.Date
 import java.util.Scanner
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JOptionPane
+import kotlin.system.exitProcess
 
 enum class AppTab(val title: String) {
     GENERATE("Generate Envelope"),
@@ -30,7 +33,8 @@ enum class AppTab(val title: String) {
 
 fun main(args: Array<String>) {
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-        handleFatalError("Uncaught exception in thread '${thread.name}'", throwable)
+        // Runs on whichever thread crashed (often the UI thread), so never block here waiting for input.
+        handleFatalError("Uncaught exception in thread '${thread.name}'", throwable, waitForEnter = false)
     }
 
     try {
@@ -54,11 +58,19 @@ fun main(args: Array<String>) {
         println("Initializing Compose Desktop UI...")
         runComposeApp()
     } catch (t: Throwable) {
-        handleFatalError("Fatal error during application startup", t)
+        handleFatalError("Fatal error during application startup", t, waitForEnter = true)
     }
 }
 
-fun handleFatalError(title: String, t: Throwable) {
+private val fatalErrorReported = AtomicBoolean(false)
+
+fun handleFatalError(title: String, t: Throwable, waitForEnter: Boolean) {
+    // A second crash while reporting the first (e.g. in the dialog) should not re-enter or loop.
+    if (!fatalErrorReported.compareAndSet(false, true)) {
+        t.printStackTrace(System.err)
+        return
+    }
+
     System.err.println("\n" + "=".repeat(60))
     System.err.println(" [FATAL ERROR] $title")
     System.err.println("=".repeat(60))
@@ -72,8 +84,8 @@ fun handleFatalError(title: String, t: Throwable) {
         val sw = StringWriter()
         val pw = PrintWriter(sw)
         t.printStackTrace(pw)
-        logFile.writeText(
-            "Error: $title\nTime: ${Date()}\nOS: ${System.getProperty("os.name")}\nJava: ${System.getProperty("java.version")}\n\n$sw"
+        logFile.appendText(
+            "=".repeat(60) + "\nError: $title\nTime: ${Date()}\nOS: ${System.getProperty("os.name")}\nJava: ${System.getProperty("java.version")}\n\n$sw\n"
         )
         System.err.println("\nCrash details saved to: ${logFile.absolutePath}")
     } catch (logEx: Exception) {
@@ -85,20 +97,24 @@ fun handleFatalError(title: String, t: Throwable) {
             JOptionPane.showMessageDialog(
                 null,
                 "An unexpected error occurred:\n\n${t.localizedMessage ?: t.javaClass.name}\n\nCheck the console or ~/.envelopes/error.log for full details.",
-                "Envelopes - Startup Error",
+                "Envelopes - Error",
                 JOptionPane.ERROR_MESSAGE
             )
         }
     } catch (_: Throwable) {}
 
-    println("\n" + "-".repeat(60))
-    print("Press ENTER to exit...")
-    try {
-        val scanner = Scanner(System.`in`)
-        if (scanner.hasNextLine()) {
-            scanner.nextLine()
-        }
-    } catch (_: Exception) {}
+    if (waitForEnter) {
+        println("\n" + "-".repeat(60))
+        print("Press ENTER to exit...")
+        try {
+            val scanner = Scanner(System.`in`)
+            if (scanner.hasNextLine()) {
+                scanner.nextLine()
+            }
+        } catch (_: Exception) {}
+    }
+
+    exitProcess(1)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -230,9 +246,15 @@ fun runComposeApp() {
                                             val updatedBook = if (existingIndex >= 0) {
                                                 appData.addressBook.toMutableList().apply { set(existingIndex, newContact) }
                                             } else {
-                                                appData.addressBook + newContact
+                                                // Guard against an edited book entry that still carries the original's id.
+                                                val idTaken = appData.addressBook.any { it.id == newContact.id }
+                                                appData.addressBook + if (idTaken) newContact.copy(id = UUID.randomUUID().toString()) else newContact
                                             }
                                             updateData(appData.copy(addressBook = updatedBook))
+                                        },
+                                        onUpdateAddressBookEntry = { updatedContact ->
+                                            val list = appData.addressBook.map { if (it.id == updatedContact.id) updatedContact else it }
+                                            updateData(appData.copy(addressBook = list))
                                         }
                                     )
                                 }
@@ -455,6 +477,11 @@ fun runCliMode() {
         addr
     }
 
-    val generatedFile = PdfGenerator.generateEnvelopePdf(selectedEnvelope, recipient, selectedReturnAddr)
+    val generatedFile = PdfGenerator.generateEnvelopePdf(
+        selectedEnvelope,
+        recipient,
+        selectedReturnAddr,
+        outputFile = File(PdfGenerator.defaultOutputDir(), selectedEnvelope.filename)
+    )
     println("\nEnvelope PDF generated successfully: ${generatedFile.absoluteFile.normalize().path}")
 }

@@ -14,14 +14,24 @@ import com.envelopes.Address
 import com.envelopes.EnvelopeConstants
 import com.envelopes.EnvelopePrinter
 import com.envelopes.PdfGenerator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.io.File
+import java.util.UUID
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
 enum class PendingAction {
     GENERATE_PDF,
     PRINT_DIRECT
+}
+
+enum class BookSave {
+    NONE,
+    NEW_ENTRY,
+    UPDATE_EXISTING
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,7 +44,8 @@ fun EnvelopeGeneratorScreen(
     onRecipientChange: (Address) -> Unit,
     onSelectReturnAddress: (String) -> Unit,
     onAddReturnAddress: () -> Unit,
-    onSaveToAddressBook: (Address) -> Unit
+    onSaveToAddressBook: (Address) -> Unit,
+    onUpdateAddressBookEntry: (Address) -> Unit
 ) {
     val envelopeList = remember { EnvelopeConstants.ENVELOPES.values.toList() }
     var selectedEnvelopeId by remember { mutableStateOf(envelopeList.first().id) }
@@ -47,47 +58,81 @@ fun EnvelopeGeneratorScreen(
     var rotateChecked by remember { mutableStateOf(true) }
     var saveToAddressBookChecked by remember { mutableStateOf(true) }
     var promptSaveDialogAction by remember { mutableStateOf<Pair<Address, PendingAction>?>(null) }
+    var promptModifiedEntryAction by remember { mutableStateOf<Pair<Address, PendingAction>?>(null) }
     var generatedFileSuccess by remember { mutableStateOf<File?>(null) }
     var printSuccessNotice by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isPrinting by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     // Check if current recipient already exists in address book
     val isRecipientInBook = remember(addressBook, currentRecipient) {
         addressBook.any { it.matches(currentRecipient) }
     }
 
+    // The Address Book entry the current recipient was picked from, if it has since been edited
+    val editedBookEntry = remember(addressBook, currentRecipient, isRecipientInBook) {
+        if (isRecipientInBook) null else addressBook.firstOrNull { it.id == currentRecipient.id }
+    }
+
     val leftScrollState = rememberScrollState()
     val rightScrollState = rememberScrollState()
 
-    fun executePrint(recipientToUse: Address?, shouldSaveToBook: Boolean) {
-        try {
-            if (shouldSaveToBook && recipientToUse != null && recipientToUse.isNotEmpty() && !isRecipientInBook) {
-                onSaveToAddressBook(recipientToUse)
+    fun saveRecipientIfRequested(recipientToUse: Address?, bookSave: BookSave) {
+        if (recipientToUse == null || recipientToUse.isEmpty() || isRecipientInBook) return
+        when (bookSave) {
+            BookSave.NONE -> {}
+            BookSave.UPDATE_EXISTING -> onUpdateAddressBookEntry(recipientToUse)
+            BookSave.NEW_ENTRY -> {
+                // An edited book entry still carries the original's id; a new entry needs its own.
+                val newEntry = if (addressBook.any { it.id == recipientToUse.id }) {
+                    recipientToUse.copy(id = UUID.randomUUID().toString())
+                } else {
+                    recipientToUse
+                }
+                onSaveToAddressBook(newEntry)
+                if (currentRecipient.id == recipientToUse.id) {
+                    onRecipientChange(newEntry)
+                }
             }
-            val printed = EnvelopePrinter.printEnvelope(
+        }
+    }
+
+    fun executePrint(recipientToUse: Address?, bookSave: BookSave) {
+        if (isPrinting) return
+        try {
+            val job = EnvelopePrinter.createPrintJob(
                 envelopeConfig = selectedEnvelope,
                 recipient = recipientToUse,
                 returnAddr = returnAddress,
                 rotate90 = rotateChecked
             )
-            if (printed) {
-                printSuccessNotice = true
+            // The print dialog is modal and must stay on the UI thread; only save once the user confirms.
+            if (!job.printDialog()) return
+            saveRecipientIfRequested(recipientToUse, bookSave)
+
+            isPrinting = true
+            coroutineScope.launch {
+                try {
+                    withContext(Dispatchers.IO) { job.print() }
+                    printSuccessNotice = true
+                } catch (e: Exception) {
+                    errorMessage = "Printing error: ${e.message}"
+                } finally {
+                    isPrinting = false
+                }
             }
         } catch (e: Exception) {
             errorMessage = "Printing error: ${e.message}"
         }
     }
 
-    fun executePdfGeneration(recipientToUse: Address?, shouldSaveToBook: Boolean) {
+    fun executePdfGeneration(recipientToUse: Address?, bookSave: BookSave) {
         try {
-            if (shouldSaveToBook && recipientToUse != null && recipientToUse.isNotEmpty() && !isRecipientInBook) {
-                onSaveToAddressBook(recipientToUse)
-            }
-
             val chooser = JFileChooser().apply {
                 dialogTitle = "Save Envelope PDF"
                 fileFilter = FileNameExtensionFilter("PDF Files (*.pdf)", "pdf")
-                selectedFile = File(selectedEnvelope.filename)
+                selectedFile = File(PdfGenerator.defaultOutputDir(), selectedEnvelope.filename)
             }
 
             val userSelection = chooser.showSaveDialog(null)
@@ -104,6 +149,7 @@ fun EnvelopeGeneratorScreen(
                     outputFile = targetFile,
                     rotate90 = rotateChecked
                 )
+                saveRecipientIfRequested(recipientToUse, bookSave)
                 generatedFileSuccess = result
             }
         } catch (e: Exception) {
@@ -114,8 +160,8 @@ fun EnvelopeGeneratorScreen(
     fun handleAction(action: PendingAction) {
         if (selectedEnvelope.isWindowed) {
             when (action) {
-                PendingAction.GENERATE_PDF -> executePdfGeneration(null, false)
-                PendingAction.PRINT_DIRECT -> executePrint(null, false)
+                PendingAction.GENERATE_PDF -> executePdfGeneration(null, BookSave.NONE)
+                PendingAction.PRINT_DIRECT -> executePrint(null, BookSave.NONE)
             }
         } else {
             if (currentRecipient.name.isBlank() && currentRecipient.street.isBlank()) {
@@ -123,19 +169,21 @@ fun EnvelopeGeneratorScreen(
                 return
             }
 
-            if (!isRecipientInBook && currentRecipient.isNotEmpty()) {
+            if (editedBookEntry != null) {
+                promptModifiedEntryAction = currentRecipient to action
+            } else if (!isRecipientInBook && currentRecipient.isNotEmpty()) {
                 if (saveToAddressBookChecked) {
                     when (action) {
-                        PendingAction.GENERATE_PDF -> executePdfGeneration(currentRecipient, true)
-                        PendingAction.PRINT_DIRECT -> executePrint(currentRecipient, true)
+                        PendingAction.GENERATE_PDF -> executePdfGeneration(currentRecipient, BookSave.NEW_ENTRY)
+                        PendingAction.PRINT_DIRECT -> executePrint(currentRecipient, BookSave.NEW_ENTRY)
                     }
                 } else {
                     promptSaveDialogAction = currentRecipient to action
                 }
             } else {
                 when (action) {
-                    PendingAction.GENERATE_PDF -> executePdfGeneration(currentRecipient, false)
-                    PendingAction.PRINT_DIRECT -> executePrint(currentRecipient, false)
+                    PendingAction.GENERATE_PDF -> executePdfGeneration(currentRecipient, BookSave.NONE)
+                    PendingAction.PRINT_DIRECT -> executePrint(currentRecipient, BookSave.NONE)
                 }
             }
         }
@@ -396,7 +444,7 @@ fun EnvelopeGeneratorScreen(
                             )
                         }
 
-                        if (!isRecipientInBook && currentRecipient.isNotEmpty()) {
+                        if (!isRecipientInBook && currentRecipient.isNotEmpty() && editedBookEntry == null) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -513,6 +561,7 @@ fun EnvelopeGeneratorScreen(
                     // 1. Direct System Print Button
                     Button(
                         onClick = { handleAction(PendingAction.PRINT_DIRECT) },
+                        enabled = !isPrinting,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
@@ -520,7 +569,7 @@ fun EnvelopeGeneratorScreen(
                     ) {
                         Icon(Icons.Default.Print, contentDescription = "Print to Printer")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Print Directly to Printer...", style = MaterialTheme.typography.titleMedium)
+                        Text(if (isPrinting) "Printing..." else "Print Directly to Printer...", style = MaterialTheme.typography.titleMedium)
                     }
 
                     // 2. Generate PDF Button
@@ -551,8 +600,8 @@ fun EnvelopeGeneratorScreen(
                     onClick = {
                         promptSaveDialogAction = null
                         when (action) {
-                            PendingAction.GENERATE_PDF -> executePdfGeneration(addr, true)
-                            PendingAction.PRINT_DIRECT -> executePrint(addr, true)
+                            PendingAction.GENERATE_PDF -> executePdfGeneration(addr, BookSave.NEW_ENTRY)
+                            PendingAction.PRINT_DIRECT -> executePrint(addr, BookSave.NEW_ENTRY)
                         }
                     }
                 ) {
@@ -564,12 +613,49 @@ fun EnvelopeGeneratorScreen(
                     onClick = {
                         promptSaveDialogAction = null
                         when (action) {
-                            PendingAction.GENERATE_PDF -> executePdfGeneration(addr, false)
-                            PendingAction.PRINT_DIRECT -> executePrint(addr, false)
+                            PendingAction.GENERATE_PDF -> executePdfGeneration(addr, BookSave.NONE)
+                            PendingAction.PRINT_DIRECT -> executePrint(addr, BookSave.NONE)
                         }
                     }
                 ) {
                     Text("Continue Without Saving")
+                }
+            }
+        )
+    }
+
+    // Edited Address Book Entry: Update It or Save as New
+    promptModifiedEntryAction?.let { (addr, action) ->
+        val original = addressBook.firstOrNull { it.id == addr.id }
+        fun proceed(bookSave: BookSave) {
+            promptModifiedEntryAction = null
+            when (action) {
+                PendingAction.GENERATE_PDF -> executePdfGeneration(addr, bookSave)
+                PendingAction.PRINT_DIRECT -> executePrint(addr, bookSave)
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { promptModifiedEntryAction = null },
+            title = { Text("Update Address Book Entry?") },
+            text = {
+                Text(
+                    "You changed '${original?.name ?: addr.name}' after picking it from your Address Book. " +
+                            "Update the existing entry, or save this as a new entry?"
+                )
+            },
+            confirmButton = {
+                Button(onClick = { proceed(BookSave.UPDATE_EXISTING) }) {
+                    Text("Update Existing")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { proceed(BookSave.NONE) }) {
+                        Text("Don't Save")
+                    }
+                    TextButton(onClick = { proceed(BookSave.NEW_ENTRY) }) {
+                        Text("Save as New")
+                    }
                 }
             }
         )

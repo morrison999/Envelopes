@@ -11,12 +11,16 @@ import java.awt.print.PrinterJob
 
 object EnvelopePrinter {
 
-    fun printEnvelope(
+    /**
+     * Builds a print job for the envelope without showing any dialog. Callers should show
+     * [PrinterJob.printDialog] on the UI thread and run [PrinterJob.print] off it.
+     */
+    fun createPrintJob(
         envelopeConfig: EnvelopeConfig,
         recipient: Address? = null,
         returnAddr: Address = EnvelopeConstants.DEFAULT_RETURN_ADDRESS,
         rotate90: Boolean = true
-    ): Boolean {
+    ): PrinterJob {
         val job = PrinterJob.getPrinterJob()
         job.setJobName("Envelope - ${envelopeConfig.name}")
 
@@ -120,11 +124,6 @@ object EnvelopePrinter {
             Printable.PAGE_EXISTS
         }, pageFormat)
 
-        return if (job.printDialog()) {
-            job.print()
-            true
-        } else {
-            false
-        }
+        return job
     }
 }

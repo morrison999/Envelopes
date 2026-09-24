@@ -105,4 +105,41 @@ class PdfGeneratorTest {
         assertTrue(content.contains("David Morrison"))
         assertTrue(content.contains("%%EOF"))
     }
+
+    @Test
+    fun testAccentedCharactersUseWinAnsiEncoding() {
+        val tempFile = File.createTempFile("test_env_accents", ".pdf")
+        tempFile.deleteOnExit()
+
+        PdfGenerator.generateEnvelopePdf(
+            envelopeConfig = EnvelopeConstants.ENVELOPES.getValue("1"),
+            recipient = Address(name = "José Peña", street = "12 Calle Niño", city = "Harlingen", state = "TX", zip = "78550"),
+            outputFile = tempFile
+        )
+
+        val bytes = tempFile.readBytes()
+        val content = bytes.toString(charset("windows-1252"))
+        assertTrue(content.contains("/Encoding /WinAnsiEncoding"))
+        assertTrue(content.contains("(José Peña) Tj"))
+        assertFalse(bytes.toString(StandardCharsets.ISO_8859_1).contains("JosÃ©"))
+
+        // The stream /Length must match the encoded byte count.
+        val length = Regex("/Length (\\d+)").find(content)!!.groupValues[1].toInt()
+        val start = content.indexOf("stream\n") + "stream\n".length
+        val end = content.indexOf("\nendstream")
+        assertEquals(length, end - start)
+
+        // Every xref offset must point at the start of its object.
+        val xref = content.substring(content.indexOf("xref\n"))
+        Regex("(\\d{10}) 00000 n").findAll(xref).forEachIndexed { idx, m ->
+            val offset = m.groupValues[1].toInt()
+            assertTrue(content.startsWith("${idx + 1} 0 obj", offset))
+        }
+    }
+
+    @Test
+    fun testDefaultOutputDirIsUnderUserHome() {
+        val home = File(System.getProperty("user.home")).absoluteFile
+        assertTrue(PdfGenerator.defaultOutputDir().absoluteFile.path.startsWith(home.path))
+    }
 }
