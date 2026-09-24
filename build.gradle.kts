@@ -33,8 +33,7 @@ compose.desktop {
         mainClass = "com.envelopes.MainKt"
         nativeDistributions {
             targetFormats(
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi
             )
             packageName = appName
             packageVersion = appVersion
@@ -56,55 +55,47 @@ tasks.test {
     useJUnitPlatform()
 }
 
-// Compose's packageMsi/packageExe can't use a custom WiX template, so the Windows installers are
-// built here with jpackage from the Compose app image, using packaging/windows/main.wxs. That
-// template asks whether to replace an existing installation or cancel.
-val packageWindowsInstallers by tasks.registering {
+// Compose's packageMsi can't use a custom WiX template, so the Windows installer is built here
+// with jpackage from the Compose app image, using packaging/windows/main.wxs. That template asks
+// whether to replace an existing installation or cancel.
+tasks.register<Exec>("packageWindowsMsi") {
     group = "compose desktop"
-    description = "Builds the Windows MSI and EXE installers with the replace-or-cancel prompt."
-}
+    description = "Builds the Windows MSI installer with the replace-or-cancel prompt."
+    onlyIf { System.getProperty("os.name").startsWith("Windows") }
+    dependsOn("createDistributable")
+    // Compose downloads WiX 3.11 via its unzipWix task (only registered on Windows, and only
+    // when WIX_PATH isn't set); reuse it rather than relying on WiX being installed.
+    dependsOn(provider { listOfNotNull(tasks.findByName("unzipWix")) })
 
-listOf("msi", "exe").forEach { type ->
-    val packageTask = tasks.register<Exec>("packageWindows${type.replaceFirstChar { it.uppercase() }}") {
-        group = "compose desktop"
-        description = "Builds the Windows ${type.uppercase()} installer with the replace-or-cancel prompt."
-        onlyIf { System.getProperty("os.name").startsWith("Windows") }
-        dependsOn("createDistributable")
-        // Compose downloads WiX 3.11 via its unzipWix task (only registered on Windows, and only
-        // when WIX_PATH isn't set); reuse it rather than relying on WiX being installed.
-        dependsOn(provider { listOfNotNull(tasks.findByName("unzipWix")) })
+    val appImage = layout.buildDirectory.dir("compose/binaries/main/app/$appName")
+    val destDir = layout.buildDirectory.dir("compose/binaries/main/msi")
+    val resourceDir = layout.projectDirectory.dir("packaging/windows")
+    inputs.dir(appImage)
+    inputs.dir(resourceDir)
+    outputs.dir(destDir)
 
-        val appImage = layout.buildDirectory.dir("compose/binaries/main/app/$appName")
-        val destDir = layout.buildDirectory.dir("compose/binaries/main/$type")
-        val resourceDir = layout.projectDirectory.dir("packaging/windows")
-        inputs.dir(appImage)
-        inputs.dir(resourceDir)
-        outputs.dir(destDir)
+    executable = File(System.getProperty("java.home"), "bin/jpackage.exe").path
+    args(
+        "--type", "msi",
+        "--app-image", appImage.get().asFile.path,
+        "--dest", destDir.get().asFile.path,
+        "--resource-dir", resourceDir.asFile.path,
+        "--name", appName,
+        "--app-version", appVersion,
+        "--description", appDescription,
+        "--vendor", appVendor,
+        "--win-upgrade-uuid", winUpgradeUuid,
+        "--win-menu",
+        "--win-menu-group", winMenuGroup,
+        "--win-shortcut",
+        "--win-dir-chooser"
+    )
 
-        executable = File(System.getProperty("java.home"), "bin/jpackage.exe").path
-        args(
-            "--type", type,
-            "--app-image", appImage.get().asFile.path,
-            "--dest", destDir.get().asFile.path,
-            "--resource-dir", resourceDir.asFile.path,
-            "--name", appName,
-            "--app-version", appVersion,
-            "--description", appDescription,
-            "--vendor", appVendor,
-            "--win-upgrade-uuid", winUpgradeUuid,
-            "--win-menu",
-            "--win-menu-group", winMenuGroup,
-            "--win-shortcut",
-            "--win-dir-chooser"
-        )
-
-        doFirst {
-            project.delete(destDir)
-            val wixDir = System.getenv("WIX_PATH") ?: (tasks.findByName("unzipWix") as? Copy)?.destinationDir?.path
-            if (wixDir != null) {
-                environment("PATH", wixDir + File.pathSeparator + System.getenv("PATH"))
-            }
+    doFirst {
+        project.delete(destDir)
+        val wixDir = System.getenv("WIX_PATH") ?: (tasks.findByName("unzipWix") as? Copy)?.destinationDir?.path
+        if (wixDir != null) {
+            environment("PATH", wixDir + File.pathSeparator + System.getenv("PATH"))
         }
     }
-    packageWindowsInstallers { dependsOn(packageTask) }
 }

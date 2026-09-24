@@ -1,4 +1,4 @@
-name: Build Windows Installer (Manual)
+name: Build Windows MSI Installer (Manual)
 
 on:
   workflow_dispatch:
@@ -51,17 +51,8 @@ jobs:
       - name: Run Tests
         run: ./gradlew test --no-daemon
 
-      - name: Build Compose Desktop Installers and Portable App
-        run: ./gradlew packageWindowsInstallers --no-daemon
-
-      - name: Create Portable Zip Package
-        shell: pwsh
-        run: |
-          $appDir = "build\compose\binaries\main\app\Envelopes"
-          if (Test-Path $appDir) {
-            Compress-Archive -Path "$appDir\*" -DestinationPath "build\compose\binaries\main\Envelopes-Windows-Portable.zip"
-            Write-Host "Created portable ZIP: build\compose\binaries\main\Envelopes-Windows-Portable.zip"
-          }
+      - name: Build Windows MSI Installer
+        run: ./gradlew packageWindowsMsi --no-daemon
 
       - name: Upload Windows MSI Installer Artifact
         uses: actions/upload-artifact@v4
@@ -69,20 +60,6 @@ jobs:
           name: Envelopes-Windows-MSI
           path: build/compose/binaries/main/msi/*.msi
           if-no-files-found: error
-
-      - name: Upload Windows EXE Installer Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Envelopes-Windows-EXE
-          path: build/compose/binaries/main/exe/*.exe
-          if-no-files-found: warn
-
-      - name: Upload Windows Portable Zip Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Envelopes-Windows-Portable-ZIP
-          path: build/compose/binaries/main/*.zip
-          if-no-files-found: warn
 
       - name: Publish Release Assets
         if: ${{ inputs.create_release }}
@@ -92,7 +69,5 @@ jobs:
           name: Release ${{ inputs.release_tag }}
           files: |
             build/compose/binaries/main/msi/*.msi
-            build/compose/binaries/main/exe/*.exe
-            build/compose/binaries/main/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
