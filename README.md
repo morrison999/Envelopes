@@ -15,6 +15,7 @@ Converted from Python (`env.py`) into pure, idiomatic Kotlin and Compose Desktop
     - Recipient Address entry with auto-fill from Address Book.
     - Automatic handling for windowed envelopes (bypasses recipient input).
     - **Real-Time Layout Preview**: Visual scaled envelope preview showing return and recipient address positions.
+    - **Rotate Option**: Checkbox to toggle 90° orientation for printer feed trays (enabled by default).
     - **Actions Under Preview**:
       - **"Print Directly to Printer..."**: Opens the native system print dialog with physical printer/tray selection.
       - **"Generate / Save PDF..."**: Prompts for file destination and writes a standard-compliant PDF.
@@ -41,8 +42,8 @@ Converted from Python (`env.py`) into pure, idiomatic Kotlin and Compose Desktop
   - GUI Mode by default.
   - Headless / CLI Mode via `--cli` argument or in headless terminal environments.
 
-- **Manual Windows MSI & EXE Installer GitHub Action**:
-  - Configured with `workflow_dispatch` to build native Windows `.msi` and `.exe` installers on demand via GitHub Actions.
+- **Manual Windows MSI Installer GitHub Action**:
+  - Configured with `workflow_dispatch` to build native Windows `.msi` installers on demand via GitHub Actions.
 
 ---
 
@@ -50,11 +51,11 @@ Converted from Python (`env.py`) into pure, idiomatic Kotlin and Compose Desktop
 
 ```
 ├── .github/workflows/
-│   └── build.yml               # Manual GitHub Actions workflow building Windows MSI & EXE
+│   └── build.yml               # Manual GitHub Actions workflow building Windows MSI installer
 ├── src/
 │   ├── main/kotlin/com/envelopes/
 │   │   ├── Models.kt           # Data models (Address, EnvelopeConfig, AppData)
-│   │   ├── StorageManager.kt   # Persistent local JSON storage manager
+│   │   ├── StorageManager.kt   # Persistent local JSON storage manager (~/.envelopes/data.json)
 │   │   ├── PdfGenerator.kt     # Pure PDF 1.4 generation engine
 │   │   ├── EnvelopePrinter.kt  # Direct system printing engine (PrinterJob)
 │   │   ├── Main.kt             # Compose Desktop app entrypoint & MenuBar
@@ -65,7 +66,7 @@ Converted from Python (`env.py`) into pure, idiomatic Kotlin and Compose Desktop
 │   │       ├── ReturnAddressesScreen.kt   # Return address management screen
 │   │       └── AddressBookScreen.kt       # Recipient address book screen
 │   └── test/kotlin/com/envelopes/
-│       ├── PdfGeneratorTest.kt # Unit tests verifying PDF creation
+│       ├── PdfGeneratorTest.kt # Unit tests verifying PDF creation & rotation
 │       └── StorageManagerTest.kt # Unit tests for address matching & defaults
 ├── build.gradle.kts            # Compose Desktop Gradle configuration
 └── settings.gradle.kts         # Gradle project settings
@@ -95,11 +96,11 @@ Converted from Python (`env.py`) into pure, idiomatic Kotlin and Compose Desktop
 ./gradlew test
 ```
 
-### Build Windows MSI & EXE Locally (on Windows)
+### Build Windows MSI Locally (on Windows)
 ```powershell
-gradlew.bat packageMsi packageExe
+gradlew.bat packageMsi
 ```
-The resulting installers will be generated under `build/compose/binaries/main/msi/` and `build/compose/binaries/main/exe/`.
+The resulting installer will be generated under `build/compose/binaries/main/msi/`.
 
 ---
 
@@ -108,7 +109,7 @@ The resulting installers will be generated under `build/compose/binaries/main/ms
 The workflow at [`.github/workflows/build.yml`](.github/workflows/build.yml) is configured for **manual trigger only** (`workflow_dispatch`):
 
 1. In GitHub, navigate to the **Actions** tab.
-2. Select **"Build Windows Installer (Manual)"** on the left.
+2. Select **"Build Windows MSI Installer (Manual)"** on the left.
 3. Click **"Run workflow"**.
-4. (Optional) Choose whether to publish the build directly as a GitHub release with a tag name.
-5. Once complete, download the `.msi` and `.exe` installers from the **Artifacts** section of the run.
+4. (Optional) Check "Publish as a GitHub Release" with a tag name.
+5. Once complete, download the `.msi` installer from the **Artifacts** section of the run.

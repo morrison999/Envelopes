@@ -26,8 +26,7 @@ compose.desktop {
         mainClass = "com.envelopes.MainKt"
         nativeDistributions {
             targetFormats(
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi
             )
             packageName = "Envelopes"
             packageVersion = "1.0.0"
