@@ -52,7 +52,7 @@ jobs:
         run: ./gradlew test --no-daemon
 
       - name: Build Compose Desktop Installers and Portable App
-        run: ./gradlew packageMsi packageExe createDistributable --no-daemon
+        run: ./gradlew packageWindowsInstallers --no-daemon
 
       - name: Create Portable Zip Package
         shell: pwsh

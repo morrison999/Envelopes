@@ -7,6 +7,13 @@ plugins {
 group = "com.envelopes"
 version = "1.0.0"
 
+val appName = "Envelopes"
+val appVersion = "1.0.0"
+val appDescription = "Envelope PDF Generator"
+val appVendor = "David Morrison"
+val winMenuGroup = "Envelopes"
+val winUpgradeUuid = "a6c9cf85-3b91-4c12-9c92-7fcf1e2b6942"
+
 repositories {
     mavenCentral()
     maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
@@ -29,18 +36,17 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe
             )
-            packageName = "Envelopes"
-            packageVersion = "1.0.0"
-            description = "Envelope PDF Generator"
-            vendor = "David Morrison"
+            packageName = appName
+            packageVersion = appVersion
+            description = appDescription
+            vendor = appVendor
 
             windows {
-                console = true
                 menu = true
                 shortcut = true
                 dirChooser = true
-                menuGroup = "Envelopes"
-                upgradeUuid = "a6c9cf85-3b91-4c12-9c92-7fcf1e2b6942"
+                menuGroup = winMenuGroup
+                upgradeUuid = winUpgradeUuid
             }
         }
     }
@@ -48,4 +54,57 @@ compose.desktop {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// Compose's packageMsi/packageExe can't use a custom WiX template, so the Windows installers are
+// built here with jpackage from the Compose app image, using packaging/windows/main.wxs. That
+// template asks whether to replace an existing installation or cancel.
+val packageWindowsInstallers by tasks.registering {
+    group = "compose desktop"
+    description = "Builds the Windows MSI and EXE installers with the replace-or-cancel prompt."
+}
+
+listOf("msi", "exe").forEach { type ->
+    val packageTask = tasks.register<Exec>("packageWindows${type.replaceFirstChar { it.uppercase() }}") {
+        group = "compose desktop"
+        description = "Builds the Windows ${type.uppercase()} installer with the replace-or-cancel prompt."
+        onlyIf { System.getProperty("os.name").startsWith("Windows") }
+        dependsOn("createDistributable")
+        // Compose downloads WiX 3.11 via its unzipWix task (only registered on Windows, and only
+        // when WIX_PATH isn't set); reuse it rather than relying on WiX being installed.
+        dependsOn(provider { listOfNotNull(tasks.findByName("unzipWix")) })
+
+        val appImage = layout.buildDirectory.dir("compose/binaries/main/app/$appName")
+        val destDir = layout.buildDirectory.dir("compose/binaries/main/$type")
+        val resourceDir = layout.projectDirectory.dir("packaging/windows")
+        inputs.dir(appImage)
+        inputs.dir(resourceDir)
+        outputs.dir(destDir)
+
+        executable = File(System.getProperty("java.home"), "bin/jpackage.exe").path
+        args(
+            "--type", type,
+            "--app-image", appImage.get().asFile.path,
+            "--dest", destDir.get().asFile.path,
+            "--resource-dir", resourceDir.asFile.path,
+            "--name", appName,
+            "--app-version", appVersion,
+            "--description", appDescription,
+            "--vendor", appVendor,
+            "--win-upgrade-uuid", winUpgradeUuid,
+            "--win-menu",
+            "--win-menu-group", winMenuGroup,
+            "--win-shortcut",
+            "--win-dir-chooser"
+        )
+
+        doFirst {
+            project.delete(destDir)
+            val wixDir = System.getenv("WIX_PATH") ?: (tasks.findByName("unzipWix") as? Copy)?.destinationDir?.path
+            if (wixDir != null) {
+                environment("PATH", wixDir + File.pathSeparator + System.getenv("PATH"))
+            }
+        }
+    }
+    packageWindowsInstallers { dependsOn(packageTask) }
 }

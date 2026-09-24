@@ -97,9 +97,11 @@ Converted from Python (`env.py`) into pure, idiomatic Kotlin and Compose Desktop
 
 ### Build Windows MSI & EXE Locally (on Windows)
 ```powershell
-gradlew.bat packageMsi packageExe
+gradlew.bat packageWindowsInstallers
 ```
 The resulting installers will be generated under `build/compose/binaries/main/msi/` and `build/compose/binaries/main/exe/`.
+
+These installers use the custom WiX template in `packaging/windows/main.wxs`: if Envelopes is already installed (any version, including the same one), the installer asks whether to **Replace** it or **Cancel**. Saved addresses in `~/.envelopes` are kept. Compose's built-in `packageMsi`/`packageExe` tasks still work but don't include this prompt.
 
 ---
 
