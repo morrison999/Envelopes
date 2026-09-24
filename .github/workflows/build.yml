@@ -51,8 +51,17 @@ jobs:
       - name: Run Tests
         run: ./gradlew test --no-daemon
 
-      - name: Build Compose Desktop MSI & EXE Installers
-        run: ./gradlew packageMsi packageExe --no-daemon
+      - name: Build Compose Desktop Installers and Portable App
+        run: ./gradlew packageMsi packageExe createDistributable --no-daemon
+
+      - name: Create Portable Zip Package
+        shell: pwsh
+        run: |
+          $appDir = "build\compose\binaries\main\app\Envelopes"
+          if (Test-Path $appDir) {
+            Compress-Archive -Path "$appDir\*" -DestinationPath "build\compose\binaries\main\Envelopes-Windows-Portable.zip"
+            Write-Host "Created portable ZIP: build\compose\binaries\main\Envelopes-Windows-Portable.zip"
+          }
 
       - name: Upload Windows MSI Installer Artifact
         uses: actions/upload-artifact@v4
@@ -68,6 +77,13 @@ jobs:
           path: build/compose/binaries/main/exe/*.exe
           if-no-files-found: warn
 
+      - name: Upload Windows Portable Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Envelopes-Windows-Portable-ZIP
+          path: build/compose/binaries/main/*.zip
+          if-no-files-found: warn
+
       - name: Publish Release Assets
         if: ${{ inputs.create_release }}
         uses: softprops/action-gh-release@v2
@@ -77,5 +93,6 @@ jobs:
           files: |
             build/compose/binaries/main/msi/*.msi
             build/compose/binaries/main/exe/*.exe
+            build/compose/binaries/main/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

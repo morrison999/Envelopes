@@ -35,6 +35,7 @@ compose.desktop {
             vendor = "David Morrison"
 
             windows {
+                console = true
                 menu = true
                 shortcut = true
                 dirChooser = true

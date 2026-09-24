@@ -15,7 +15,12 @@ import com.envelopes.ui.AddressEditDialog
 import com.envelopes.ui.EnvelopeGeneratorScreen
 import com.envelopes.ui.ReturnAddressesScreen
 import java.awt.GraphicsEnvironment
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.util.Date
 import java.util.Scanner
+import javax.swing.JOptionPane
 
 enum class AppTab(val title: String) {
     GENERATE("Generate Envelope"),
@@ -23,14 +28,81 @@ enum class AppTab(val title: String) {
     ADDRESS_BOOK("Address Book")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 fun main(args: Array<String>) {
-    // If CLI flag passed or headless environment without display
-    if (args.contains("--cli") || GraphicsEnvironment.isHeadless()) {
-        runCliMode()
-        return
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        handleFatalError("Uncaught exception in thread '${thread.name}'", throwable)
     }
 
+    try {
+        println("=".repeat(60))
+        println("         Envelopes - PDF & Direct Print Generator")
+        println("                      Version 1.0.0")
+        println("=".repeat(60))
+        println("Runtime Environment:")
+        println("  Java Version : ${System.getProperty("java.version")} (${System.getProperty("java.vendor")})")
+        println("  OS Name/Arch : ${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")})")
+        println("  User Home    : ${System.getProperty("user.home")}")
+        println("  Working Dir  : ${System.getProperty("user.dir")}")
+        println("=".repeat(60))
+
+        if (args.contains("--cli") || GraphicsEnvironment.isHeadless()) {
+            println("Running in CLI mode...")
+            runCliMode()
+            return
+        }
+
+        println("Initializing Compose Desktop UI...")
+        runComposeApp()
+    } catch (t: Throwable) {
+        handleFatalError("Fatal error during application startup", t)
+    }
+}
+
+fun handleFatalError(title: String, t: Throwable) {
+    System.err.println("\n" + "=".repeat(60))
+    System.err.println(" [FATAL ERROR] $title")
+    System.err.println("=".repeat(60))
+    t.printStackTrace(System.err)
+
+    try {
+        val home = System.getProperty("user.home")
+        val logDir = File(home, ".envelopes")
+        logDir.mkdirs()
+        val logFile = File(logDir, "error.log")
+        val sw = StringWriter()
+        val pw = PrintWriter(sw)
+        t.printStackTrace(pw)
+        logFile.writeText(
+            "Error: $title\nTime: ${Date()}\nOS: ${System.getProperty("os.name")}\nJava: ${System.getProperty("java.version")}\n\n$sw"
+        )
+        System.err.println("\nCrash details saved to: ${logFile.absolutePath}")
+    } catch (logEx: Exception) {
+        System.err.println("Could not write error.log: ${logEx.message}")
+    }
+
+    try {
+        if (!GraphicsEnvironment.isHeadless()) {
+            JOptionPane.showMessageDialog(
+                null,
+                "An unexpected error occurred:\n\n${t.localizedMessage ?: t.javaClass.name}\n\nCheck the console or ~/.envelopes/error.log for full details.",
+                "Envelopes - Startup Error",
+                JOptionPane.ERROR_MESSAGE
+            )
+        }
+    } catch (_: Throwable) {}
+
+    println("\n" + "-".repeat(60))
+    print("Press ENTER to exit...")
+    try {
+        val scanner = Scanner(System.`in`)
+        if (scanner.hasNextLine()) {
+            scanner.nextLine()
+        }
+    } catch (_: Exception) {}
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+fun runComposeApp() {
     application {
         val windowState = rememberWindowState(
             size = DpSize(1020.dp, 760.dp),
@@ -266,7 +338,7 @@ fun main(args: Array<String>) {
                             text = {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("Version 1.0.0")
-                                    Text("A modern, zero-dependency PDF envelope generator with integrated return address management and recipient address book.")
+                                    Text("A modern, zero-dependency PDF envelope generator with integrated return address management, recipient address book, and direct system printing.")
                                     Text("Supports #10, #10 Windowed, #9, and #6 commercial envelope standards.")
                                 }
                             },
@@ -370,7 +442,6 @@ fun runCliMode() {
             zip = zip
         )
 
-        // Check if address is in address book
         val isInBook = appData.addressBook.any { it.matches(addr) }
         if (!isInBook && addr.isNotEmpty()) {
             print("\nRecipient '${addr.name}' is not in your Address Book. Save it? (Y/n) [default: Y]: ")
